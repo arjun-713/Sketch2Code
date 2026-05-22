@@ -1,9 +1,19 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { CanvasState, CodeLanguage, FlowShape } from "../types.js";
 
-const apiKey = process.env.GEMINI_API_KEY;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-const model = genAI?.getGenerativeModel({ model: "gemini-2.5-flash" });
+let genAI: GoogleGenerativeAI | null = null;
+let model: any = null;
+
+function getModel() {
+  if (!model) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey) {
+      genAI = new GoogleGenerativeAI(apiKey);
+      model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    }
+  }
+  return model;
+}
 
 export function buildStreamPrompt(language: CodeLanguage, problemContext?: string) {
   return `You are a strictly literal code translator. Your ONLY job is to convert the EXACT steps shown in the flowchart image into ${language} code.
@@ -16,7 +26,8 @@ Problem context: ${problemContext ?? "Not provided"}`;
 }
 
 export async function streamShapeCode(prompt: string, imageBase64: string | undefined, language: CodeLanguage, onChunk: (text: string) => void) {
-  if (!model) {
+  const modelInstance = getModel();
+  if (!modelInstance) {
     onChunk(`// No Gemini key found.\n// Expected ${language} code from image.\n`);
     return;
   }
@@ -32,7 +43,7 @@ export async function streamShapeCode(prompt: string, imageBase64: string | unde
   }
 
   try {
-    const result = await model.generateContentStream(parts);
+    const result = await modelInstance.generateContentStream(parts);
     for await (const chunk of result.stream) {
       const text = chunk.text();
       // Clean up markdown wrappers if the model ignores instructions
@@ -45,7 +56,8 @@ export async function streamShapeCode(prompt: string, imageBase64: string | unde
 }
 
 export async function analyzeAlgorithm(imageBase64: string | undefined, problemContext?: string): Promise<string> {
-  if (!model) return "No Gemini key configured.";
+  const modelInstance = getModel();
+  if (!modelInstance) return "No Gemini key configured.";
 
   const prompt = `You are a DSA teaching assistant.
 Analyze this flowchart.
@@ -65,7 +77,7 @@ Problem context: ${problemContext ?? "None"}`;
   }
 
   try {
-    const result = await model.generateContent(parts);
+    const result = await modelInstance.generateContent(parts);
     return result.response.text();
   } catch (error) {
     console.error("Gemini analysis error:", error);
